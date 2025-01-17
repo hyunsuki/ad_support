@@ -33,7 +33,7 @@ if uploaded_file:
 
 # 데이터프레임 출력 및 목록 추가/삭제 기능
 if not st.session_state.data.empty:
-    st.write("현재 데이터:")
+    st.write("해외여행 라이브 정보:")
 
     # 데이터프레임 출력
     st.dataframe(st.session_state.data)
