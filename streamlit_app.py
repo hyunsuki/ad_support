@@ -39,7 +39,7 @@ if not st.session_state.data.empty:
     st.dataframe(st.session_state.data)
 
     # 목록(행) 추가
-    st.write("목록 추가")
+    st.write("라이브 정보 추가")
     new_row = {col: st.text_input(f"새로운 값 입력 ({col})", "") for col in st.session_state.data.columns}
     if st.button("추가"):
         try:
@@ -49,7 +49,7 @@ if not st.session_state.data.empty:
             st.error(f"목록 추가 중 오류가 발생했습니다: {e}")
 
     # 목록(행) 삭제
-    st.write("목록 삭제")
+    st.write("라이브 항목 삭제")
     delete_index = st.number_input("삭제할 행의 인덱스 선택", min_value=0, max_value=len(st.session_state.data)-1, step=1)
     if st.button("삭제"):
         try:
