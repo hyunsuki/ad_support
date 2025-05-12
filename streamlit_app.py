@@ -1,116 +1,100 @@
+import time
+import re
+from datetime import datetime
+import pandas as pd
 import streamlit as st
-from selenium import webdriver
+from seleniumwire import webdriver
+from undetected_chromedriver.v2 import Chrome, ChromeOptions
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
-import pandas as pd
-import re
-import time
-from datetime import datetime
-import base64
+import urllib.parse
+from io import BytesIO
 
-# ✅ 드라이버 생성 함수 (Streamlit Cloud 환경용)
-def create_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
+# Selenium WebDriver 설정
+def get_selenium_driver():
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument("--headless")  # 브라우저 창을 표시하지 않음
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--no-sandbox")
 
-    # Streamlit Cloud 환경용 경로
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
-
-    driver = webdriver.Chrome(
-        service=Service("/usr/lib/chromium-browser/chromedriver"),
-        options=chrome_options
-    )
+    driver = Chrome(options=chrome_options)
     return driver
 
-# ✅ 크롤링 함수
-def crawl_naver_powerlink(keywords):
-    driver = create_driver()
+# 네이버 파워링크 광고 크롤링 함수
+def crawl_naver_powerlink_selenium_wire(keywords):
+    driver = get_selenium_driver()
+    
     data = []
 
     for keyword in keywords:
-        driver.get("https://www.naver.com")
-        search_box = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.NAME, "query"))
-        )
-        search_box.send_keys(keyword)
-        search_box.send_keys(Keys.RETURN)
+        query = urllib.parse.quote(keyword)
+        url = f"https://search.naver.com/search.naver?query={query}"
 
+        driver.get(url)
+
+        # 페이지 로딩 대기
+        time.sleep(3)  # 동적 요소들이 로드될 시간을 줍니다.
+
+        # 파워링크 영역 찾기
         try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "nad_area"))
-            )
-        except:
-            st.warning(f"[{keyword}] 파워링크 영역을 찾지 못했습니다.")
-            data.append([keyword, "없음", ""])
+            powerlink_area = driver.find_element(By.CLASS_NAME, "nad_area")
+            powerlinks = powerlink_area.find_elements(By.CSS_SELECTOR, ".lst_type li")
+        except Exception as e:
+            print(f"[{keyword}] 파워링크 광고를 찾지 못했습니다.")
+            data.append([keyword, "광고 없음", ""])
             continue
 
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, "html.parser")
-        powerlinks = soup.select(".nad_area .lst_type > li")
-
         if not powerlinks:
-            st.warning(f"[{keyword}] 파워링크 광고를 찾지 못했습니다.")
-            data.append([keyword, "없음", ""])
+            print(f"[{keyword}] 파워링크 광고를 찾지 못했습니다.")
+            data.append([keyword, "광고 없음", ""])
         else:
             for ad in powerlinks:
-                title_element = ad.select_one("a.site")
-                title = title_element.get_text(strip=True) if title_element else "제목 없음"
+                title_element = ad.find_element(By.CSS_SELECTOR, "a.site")
+                title = title_element.text.strip() if title_element else "제목 없음"
 
-                link_element = ad.select_one("a.lnk_url")
-                if link_element:
-                    onclick_attr = link_element.get("onclick", "")
-                    match = re.search(r"urlencode\('(.+?)'\)", onclick_attr)
-                    link = match.group(1) if match else "링크 없음"
-                else:
-                    link = "링크 없음"
+                link_element = ad.find_element(By.CSS_SELECTOR, "a.site")
+                link = link_element.get_attribute("href") if link_element else "링크 없음"
 
                 data.append([keyword, title, link])
 
     driver.quit()
+
     return data
 
-# ✅ 엑셀 다운로드 링크 생성 함수
-def get_table_download_link(df, filename):
-    towrite = pd.ExcelWriter(filename, engine='openpyxl')
-    df.to_excel(towrite, index=False)
-    towrite.close()
-
-    with open(filename, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">📥 엑셀 파일 다운로드</a>'
-    return href
-
-# ✅ Streamlit 앱 UI
+# Streamlit 앱 UI
 st.title("네이버 파워링크 광고 크롤러")
+st.write("네이버 검색에서 파워링크 광고를 크롤링하고 결과를 확인하세요.")
 
-keywords_input = st.text_area("크롤링할 키워드를 줄바꿈으로 입력하세요.")
+# 사용자로부터 키워드 입력 받기
+keywords_input = st.text_area("검색할 키워드를 입력하세요 (여러 키워드는 줄바꿈으로 구분)", "")
+keywords = keywords_input.split("\n") if keywords_input else []
+
 if st.button("크롤링 시작"):
-    if keywords_input.strip() == "":
-        st.error("키워드를 입력하세요.")
-    else:
-        keywords = [kw.strip() for kw in keywords_input.strip().split("\n") if kw.strip()]
-
+    if keywords:
+        # 크롤링 시작
         with st.spinner("크롤링 중..."):
-            result = crawl_naver_powerlink(keywords)
+            results = crawl_naver_powerlink_selenium_wire(keywords)
 
-        if result:
-            df = pd.DataFrame(result, columns=["검색 키워드", "광고 제목", "광고 링크"])
-            st.success("크롤링 완료!")
-
+        # 결과 출력
+        if results:
+            st.write("크롤링된 결과:")
+            df = pd.DataFrame(results, columns=["검색 키워드", "광고 제목", "광고 링크"])
             st.dataframe(df)
 
-            # 다운로드 링크 생성
+            # 엑셀 파일로 저장
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            filename = f"naver_powerlink_{timestamp}.xlsx"
+            filename = f"naver_powerlink_selenium_wire_{timestamp}.xlsx"
+            output = BytesIO()
+            df.to_excel(output, index=False)
+            output.seek(0)
 
-            # 엑셀 다운로드 링크 표시
-            st.markdown(get_table_download_link(df, filename), unsafe_allow_html=True)
-        else:
-            st.warning("크롤링된 데이터가 없습니다.")
+            st.download_button(
+                label="엑셀 파일 다운로드",
+                data=output,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    else:
+        st.warning("키워드를 입력해 주세요.")
