@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
+from io import BytesIO  # 수정된 부분
 
 def crawl_naver_powerlink_with_requests(keywords):
     data = []
@@ -53,7 +54,7 @@ if st.button("크롤링 시작"):
             st.dataframe(df)
 
             # 엑셀 파일로 저장
-            output = BytesIO()
+            output = BytesIO()  # 수정된 부분
             df.to_excel(output, index=False)
             output.seek(0)
 
