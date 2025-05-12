@@ -1,65 +1,103 @@
 import streamlit as st
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
 import pandas as pd
-import io  # StringIO를 위한 모듈
+import re
+import time
+from datetime import datetime
+import os
 
-# streamlit run viewer/streamlit_handler.py
+def crawl_naver_powerlink(keywords):
+    options = webdriver.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--headless")  # streamlit용 headless 모드
 
-st.set_page_config(layout="wide")
+    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-st.title("Shopping LIVE DashBoard📊")
+    data = []
 
-# 업로드된 엑셀 파일을 처리하는 함수
-def process_uploaded_file(uploaded_file):
-    if uploaded_file is not None:
+    for keyword in keywords:
+        driver.get("https://www.naver.com")
+
         try:
-            df = pd.read_excel(uploaded_file)
-            st.success("파일이 성공적으로 업로드되었습니다.")
-            return df
-        except Exception as e:
-            st.error(f"파일 처리 중 오류가 발생했습니다: {e}")
-            return pd.DataFrame()
-    return pd.DataFrame()
+            search_box = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "query"))
+            )
+            search_box.send_keys(keyword)
+            search_box.send_keys(Keys.RETURN)
 
-# 파일 업로드 위젯
-uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요", type=["xlsx", "xls"])
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "nad_area"))
+            )
+        except:
+            data.append([keyword, "없음", ""])
+            continue
 
-# 데이터프레임 저장용 세션 상태 초기화
-if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame()
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, "html.parser")
+        powerlinks = soup.select(".nad_area .lst_type > li")
 
-# 업로드된 파일을 처리
-if uploaded_file:
-    st.session_state.data = process_uploaded_file(uploaded_file)
+        if not powerlinks:
+            data.append([keyword, "없음", ""])
+        else:
+            for ad in powerlinks:
+                title_element = ad.select_one("a.site")
+                title = title_element.get_text(strip=True) if title_element else "제목 없음"
 
-# 데이터프레임 출력 및 목록 추가/삭제 기능
-if not st.session_state.data.empty:
-    st.write("해외여행 라이브 정보:")
+                link_element = ad.select_one("a.lnk_url")
+                if link_element:
+                    onclick_attr = link_element.get("onclick", "")
+                    match = re.search(r"urlencode\('(.+?)'\)", onclick_attr)
+                    link = match.group(1) if match else "링크 없음"
+                else:
+                    link = "링크 없음"
 
-    # 데이터프레임 출력
-    st.dataframe(st.session_state.data)
+                data.append([keyword, title, link])
 
-    # 목록(행) 추가
-    st.write("라이브 정보 추가")
-    new_row = {col: st.text_input(f"새로운 값 입력 ({col})", "") for col in st.session_state.data.columns}
-    if st.button("추가"):
-        try:
-            st.session_state.data = st.session_state.data.append(new_row, ignore_index=True)
-            st.success("새로운 목록(행)이 추가되었습니다.")
-        except Exception as e:
-            st.error(f"목록 추가 중 오류가 발생했습니다: {e}")
+    driver.quit()
 
-    # 목록(행) 삭제
-    st.write("라이브 항목 삭제")
-    delete_index = st.number_input("삭제할 행의 인덱스 선택", min_value=0, max_value=len(st.session_state.data)-1, step=1)
-    if st.button("삭제"):
-        try:
-            st.session_state.data = st.session_state.data.drop(delete_index).reset_index(drop=True)
-            st.success("선택한 목록(행)이 삭제되었습니다.")
-        except Exception as e:
-            st.error(f"목록 삭제 중 오류가 발생했습니다: {e}")
+    if data:
+        df = pd.DataFrame(data, columns=["검색 키워드", "광고 제목", "광고 링크"])
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        filename = f"naver_powerlink_{timestamp}.xlsx"
+        df.to_excel(filename, index=False, engine='openpyxl')
+        return df, filename
+    else:
+        return None, None
 
-    # 수정된 데이터 출력
-    st.write("수정된 데이터:")
-    st.dataframe(st.session_state.data)
-else:
-    st.info("엑셀 파일을 업로드하면 데이터를 확인하고 관리할 수 있습니다.")
+
+# Streamlit UI 구성
+st.title("네이버 파워링크 광고 크롤러")
+st.markdown("네이버 검색결과의 파워링크 광고 제목과 링크를 수집합니다.")
+
+keywords_input = st.text_area("🔍 크롤링할 키워드 (줄바꿈으로 구분)", height=200)
+if st.button("크롤링 시작"):
+    if not keywords_input.strip():
+        st.warning("키워드를 입력해 주세요.")
+    else:
+        keywords = [kw.strip() for kw in keywords_input.strip().split("\n") if kw.strip()]
+        with st.spinner("크롤링 중... 브라우저가 자동으로 열리고 종료됩니다."):
+            result_df, filename = crawl_naver_powerlink(keywords)
+
+        if result_df is not None:
+            st.success(f"크롤링 완료! 총 {len(result_df)}건 수집.")
+            st.dataframe(result_df)
+
+            with open(filename, "rb") as f:
+                st.download_button(
+                    label="📥 엑셀 파일 다운로드",
+                    data=f,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            os.remove(filename)
+        else:
+            st.error("크롤링된 데이터가 없습니다.")
