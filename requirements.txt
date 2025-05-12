@@ -1,5 +1,5 @@
 streamlit
-selenium
+selenium==4.19.0
 webdriver-manager
 beautifulsoup4
 openpyxl
