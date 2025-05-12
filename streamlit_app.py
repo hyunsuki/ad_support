@@ -1,65 +1,34 @@
-import time
-import re
-from datetime import datetime
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
-from seleniumwire import webdriver
-from undetected_chromedriver.v2 import Chrome, ChromeOptions
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-import urllib.parse
-from io import BytesIO
 
-# Selenium WebDriver 설정
-def get_selenium_driver():
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument("--headless")  # 브라우저 창을 표시하지 않음
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--no-sandbox")
-
-    driver = Chrome(options=chrome_options)
-    return driver
-
-# 네이버 파워링크 광고 크롤링 함수
-def crawl_naver_powerlink_selenium_wire(keywords):
-    driver = get_selenium_driver()
-    
+def crawl_naver_powerlink_with_requests(keywords):
     data = []
 
     for keyword in keywords:
-        query = urllib.parse.quote(keyword)
+        query = requests.utils.quote(keyword)
         url = f"https://search.naver.com/search.naver?query={query}"
 
-        driver.get(url)
-
-        # 페이지 로딩 대기
-        time.sleep(3)  # 동적 요소들이 로드될 시간을 줍니다.
+        # 요청을 보내고, HTML 파싱
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
 
         # 파워링크 영역 찾기
-        try:
-            powerlink_area = driver.find_element(By.CLASS_NAME, "nad_area")
-            powerlinks = powerlink_area.find_elements(By.CSS_SELECTOR, ".lst_type li")
-        except Exception as e:
-            print(f"[{keyword}] 파워링크 광고를 찾지 못했습니다.")
-            data.append([keyword, "광고 없음", ""])
-            continue
-
-        if not powerlinks:
-            print(f"[{keyword}] 파워링크 광고를 찾지 못했습니다.")
-            data.append([keyword, "광고 없음", ""])
+        powerlink_area = soup.select_one(".nad_area")
+        if powerlink_area:
+            powerlinks = powerlink_area.select(".lst_type li")
+            if powerlinks:
+                for ad in powerlinks:
+                    title_element = ad.select_one("a.site")
+                    title = title_element.text.strip() if title_element else "제목 없음"
+                    link_element = ad.select_one("a.site")
+                    link = link_element.get("href") if link_element else "링크 없음"
+                    data.append([keyword, title, link])
+            else:
+                data.append([keyword, "광고 없음", ""])
         else:
-            for ad in powerlinks:
-                title_element = ad.find_element(By.CSS_SELECTOR, "a.site")
-                title = title_element.text.strip() if title_element else "제목 없음"
-
-                link_element = ad.find_element(By.CSS_SELECTOR, "a.site")
-                link = link_element.get_attribute("href") if link_element else "링크 없음"
-
-                data.append([keyword, title, link])
-
-    driver.quit()
+            data.append([keyword, "광고 없음", ""])
 
     return data
 
@@ -75,7 +44,7 @@ if st.button("크롤링 시작"):
     if keywords:
         # 크롤링 시작
         with st.spinner("크롤링 중..."):
-            results = crawl_naver_powerlink_selenium_wire(keywords)
+            results = crawl_naver_powerlink_with_requests(keywords)
 
         # 결과 출력
         if results:
@@ -84,8 +53,6 @@ if st.button("크롤링 시작"):
             st.dataframe(df)
 
             # 엑셀 파일로 저장
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            filename = f"naver_powerlink_selenium_wire_{timestamp}.xlsx"
             output = BytesIO()
             df.to_excel(output, index=False)
             output.seek(0)
@@ -93,7 +60,7 @@ if st.button("크롤링 시작"):
             st.download_button(
                 label="엑셀 파일 다운로드",
                 data=output,
-                file_name=filename,
+                file_name="naver_powerlink_requests.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
