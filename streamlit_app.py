@@ -24,7 +24,8 @@ def crawl_naver_powerlink_with_requests(keywords):
                     title_element = ad.select_one("a.site")
                     title = title_element.text.strip() if title_element else "제목 없음"
                     link_element = ad.select_one("a.site")
-                    link = link_element.get("href") if link_element else "링크 없음"
+                    #link = link_element.get("href") if link_element else "링크 없음"
+                    link = link_element.text if link_element else "링크 없음"
                     data.append([keyword, title, link])
             else:
                 data.append([keyword, "광고 없음", ""])
