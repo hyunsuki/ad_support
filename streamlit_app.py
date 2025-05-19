@@ -22,7 +22,7 @@ def crawl_naver_powerlink_with_requests(keywords):
                 for ad in powerlinks:
                     # 광고 제목 가져오기
                     title_element = ad.select_one("a.site")
-                    title = title_element.text.strip() if title_element else "제목 없음"
+                    title = title_element.text.strip() if title_element else "없음"
 
                     # 랜딩 URL 가져오기 (onclick 속성 안의 urlencode 부분)
                     link_element = ad.select_one("a.lnk_url")
@@ -31,7 +31,7 @@ def crawl_naver_powerlink_with_requests(keywords):
                         match = re.search(r"urlencode\('([^']+)'\)", onclick_value)
                         link = match.group(1) if match else ""
                     else:
-                        link = "링크 없음"
+                        link = ""
 
                     data.append([keyword, title, link])
             else:
