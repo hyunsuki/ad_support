@@ -29,7 +29,7 @@ def crawl_naver_powerlink_with_requests(keywords):
                     if link_element:
                         onclick_value = link_element.get("onclick", "")
                         match = re.search(r"urlencode\('([^']+)'\)", onclick_value)
-                        link = match.group(1) if match else "링크 없음"
+                        link = match.group(1) if match else ""
                     else:
                         link = "링크 없음"
 
