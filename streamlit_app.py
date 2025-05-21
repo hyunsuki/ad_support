@@ -21,21 +21,20 @@ def crawl_naver_powerlink_with_requests(keywords):
             if powerlinks:
                 for ad in powerlinks:
                     title_element = ad.select_one("a.lnk_url")
-                    title = title_element.text.strip() if title_element else "제목 없음"
+                    title = title_element.text.strip() if title_element else "없음"
 
-                    link_element = ad.select_one("a.lnk_url")
-                    if link_element:
-                        onclick_value = link_element.get("onclick", "")
-                        match = re.search(r"urlencode\(\"(https?://[^\"]+)\"\)", onclick_value)
-                        link = match.group(1) if match else "링크 없음"
-                    else:
-                        link = "링크 없음"
+                    link = ""
+                    if title_element:
+                        onclick_value = title_element.get("onclick", "")
+                        match = re.search(r'urlencode\(\"(https?://[^\"]+)\"\)', onclick_value)
+                        if match:
+                            link = match.group(1)
 
                     data.append([keyword, title, link])
             else:
-                data.append([keyword, "광고 없음", ""])
+                data.append([keyword, "없음", ""])
         else:
-            data.append([keyword, "광고 없음", ""])
+            data.append([keyword, "없음", ""])
 
     return data
 
