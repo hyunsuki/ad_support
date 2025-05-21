@@ -20,7 +20,7 @@ def crawl_naver_powerlink_with_requests(keywords):
             powerlinks = powerlink_area.select(".lst_type li")
             if powerlinks:
                 for ad in powerlinks:
-                    title_element = ad.select_one("a.lnk_url")
+                    title_element = ad.select_one("a.site")  # <- 여기만 수정!
                     title = title_element.text.strip() if title_element else "없음"
 
                     link = ""
