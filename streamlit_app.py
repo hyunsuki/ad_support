@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
 from io import BytesIO
-import re  # 추가된 부분
+import re
 
 def crawl_naver_powerlink_with_requests(keywords):
     data = []
@@ -20,15 +20,13 @@ def crawl_naver_powerlink_with_requests(keywords):
             powerlinks = powerlink_area.select(".lst_type li")
             if powerlinks:
                 for ad in powerlinks:
-                    title_element = ad.select_one("a.site")  # <- 여기만 수정!
+                    # 광고 제목 가져오기 — a.site
+                    title_element = ad.select_one("a.site")
                     title = title_element.text.strip() if title_element else "없음"
 
-                    link = ""
-                    if title_element:
-                        onclick_value = title_element.get("onclick", "")
-                        match = re.search(r'urlencode\(\"(https?://[^\"]+)\"\)', onclick_value)
-                        if match:
-                            link = match.group(1)
+                    # 표시용 링크 가져오기 — a.lnk_url 텍스트
+                    link_element = ad.select_one("a.lnk_url")
+                    link = link_element.text.strip() if link_element else ""
 
                     data.append([keyword, title, link])
             else:
@@ -52,7 +50,7 @@ if st.button("크롤링 시작"):
 
         if results:
             st.write("크롤링된 결과:")
-            df = pd.DataFrame(results, columns=["검색 키워드", "광고 제목", "랜딩 URL"])
+            df = pd.DataFrame(results, columns=["검색 키워드", "광고 제목", "표시용 링크"])
             st.dataframe(df)
 
             output = BytesIO()
