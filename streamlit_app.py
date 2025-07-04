@@ -35,7 +35,7 @@ def crawl_naver_powerlink(keywords):
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        # 모바일 버전 크롤링 (업데이트된 셀렉터)
+        # 모바일 버전 크롤링 (업데이트된 셀렉터 + 광고주명/표시링크 추가)
         url_mo = f"https://m.search.naver.com/search.naver?where=m&query={query}"
         res_mo = requests.get(url_mo, headers=headers_mo)
         soup_mo = BeautifulSoup(res_mo.text, "html.parser")
@@ -46,10 +46,13 @@ def crawl_naver_powerlink(keywords):
                 title_el = ad.select_one("a.link_tit strong.tit")
                 title = title_el.get_text(strip=True) if title_el else "없음"
 
-                link_el = ad.select_one("a.link_tit")
-                link = link_el["href"].strip() if link_el and "href" in link_el.attrs else ""
+                advertiser_el = ad.select_one("span.site")
+                advertiser = advertiser_el.get_text(strip=True) if advertiser_el else "없음"
 
-                data.append([keyword, title, link, "MO"])
+                link_el = ad.select_one("span.url_link")
+                link = link_el.get_text(strip=True) if link_el else ""
+
+                data.append([keyword, f"{title} ({advertiser})", link, "MO"])
         else:
             data.append([keyword, "없음", "", "MO"])
 
@@ -69,7 +72,7 @@ if st.button("크롤링 시작"):
 
         if results:
             st.write("크롤링된 결과:")
-            df = pd.DataFrame(results, columns=["검색 키워드", "광고 제목", "표시용 링크", "구분"])
+            df = pd.DataFrame(results, columns=["검색 키워드", "광고 제목 (광고주)", "표시용 링크", "구분"])
             st.dataframe(df)
 
             output = BytesIO()
