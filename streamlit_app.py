@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
 from io import BytesIO
-import re
 
 def crawl_naver_powerlink(keywords):
     data = []
@@ -47,8 +46,8 @@ def crawl_naver_powerlink(keywords):
                 title_el = ad.select_one(".tit_area .tit")
                 title = title_el.get_text(strip=True) if title_el else "없음"
 
-                link_el = ad.select_one("a.txt_link")
-                link = link_el.get("href") if link_el else ""
+                link_el = ad.select_one(".url_area .url_link")
+                link = link_el.get_text(strip=True) if link_el else ""
 
                 data.append([keyword, title, link, "MO"])
         else:
