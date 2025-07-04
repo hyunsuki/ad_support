@@ -8,6 +8,7 @@ import time
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 def crawl_naver_powerlink_pc(keywords):
@@ -50,7 +51,8 @@ def crawl_naver_powerlink_mobile_selenium(keywords):
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     )
 
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
 
     for keyword in keywords:
         url = f"https://m.search.naver.com/search.naver?where=m&query={requests.utils.quote(keyword)}"
