@@ -35,19 +35,19 @@ def crawl_naver_powerlink(keywords):
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        # 모바일 버전 크롤링
+        # 모바일 버전 크롤링 (업데이트된 셀렉터)
         url_mo = f"https://m.search.naver.com/search.naver?where=m&query={query}"
         res_mo = requests.get(url_mo, headers=headers_mo)
         soup_mo = BeautifulSoup(res_mo.text, "html.parser")
 
-        powerlinks_mo = soup_mo.select("#contentsList li")
+        powerlinks_mo = soup_mo.select("div.ad_section._ad_list div.ad_item._ad_item")
         if powerlinks_mo:
             for ad in powerlinks_mo:
-                title_el = ad.select_one(".tit_area .tit")
+                title_el = ad.select_one("a.link_tit strong.tit")
                 title = title_el.get_text(strip=True) if title_el else "없음"
 
-                link_el = ad.select_one(".url_area .url_link")
-                link = link_el.get_text(strip=True) if link_el else ""
+                link_el = ad.select_one("a.link_tit")
+                link = link_el["href"].strip() if link_el and "href" in link_el.attrs else ""
 
                 data.append([keyword, title, link, "MO"])
         else:
