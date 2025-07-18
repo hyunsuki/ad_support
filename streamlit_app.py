@@ -20,6 +20,7 @@ def crawl_naver_powerlink(keywords):
     }
 
     for keyword in keywords:
+        # URL 인코딩
         query = requests.utils.quote(keyword)
 
         # ─── PC 크롤링 ───────────────────────────────
@@ -37,7 +38,6 @@ def crawl_naver_powerlink(keywords):
             data.append([keyword, "없음", "", "PC"])
 
         # ─── 모바일 크롤링 ────────────────────────────
-        # URL 끝에 &referenceId 까지 붙여서 요청
         url_mo = (
             f"https://m.ad.search.naver.com/search.naver"
             f"?where=m_expd&query={query}&referenceId"
@@ -48,9 +48,9 @@ def crawl_naver_powerlink(keywords):
         ads_mo = soup_mo.select("div#ct.powerlink li")
         if ads_mo:
             for ad in ads_mo:
-                adv_el = ad.select_one(".site")
-                url_el = ad.select_one(".url_link")
-                title = adv_el.get_text(strip=True) if adv_el else "없음"
+                title_el = ad.select_one(".site")
+                url_el   = ad.select_one(".url_link")
+                title = title_el.get_text(strip=True) if title_el else "없음"
                 link  = url_el.get_text(strip=True) if url_el else ""
                 data.append([keyword, title, link, "MO"])
         else:
