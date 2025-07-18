@@ -12,7 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 
 # ───────────────────────────────────────────────────────────────
-# 1) 모바일용 크롬 드라이버 생성 함수 (Selenium)
+# 1) 모바일용 크롬 드라이버 생성 함수
 # ───────────────────────────────────────────────────────────────
 def get_mobile_driver():
     options = Options()
@@ -51,18 +51,15 @@ def crawl_naver_powerlink(keywords):
     for keyword in keywords:
         query = requests.utils.quote(keyword)
 
-        # ───▶ PC 버전 크롤링 (기존 방식)
+        # ───▶ PC 버전 크롤링
         url_pc = f"https://search.naver.com/search.naver?query={query}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
-
         powerlinks_pc = soup_pc.select(".lst_type li")
         if powerlinks_pc:
             for ad in powerlinks_pc:
-                title_el = ad.select_one("a.site")
-                title = title_el.get_text(strip=True) if title_el else "없음"
-                link_el = ad.select_one("a.lnk_url")
-                link = link_el.get_text(strip=True) if link_el else ""
+                title = ad.select_one("a.site").get_text(strip=True) if ad.select_one("a.site") else "없음"
+                link  = ad.select_one("a.lnk_url").get_text(strip=True) if ad.select_one("a.lnk_url") else ""
                 data.append([keyword, title, link, "PC"])
         else:
             data.append([keyword, "없음", "", "PC"])
@@ -75,15 +72,17 @@ def crawl_naver_powerlink(keywords):
         ads_collected = set()
         collected = False
 
-        # (1) “광고 더보기” 링크 탐색 → 정적 HTML 요청
+        # (1) XPath로 “광고 더보기” 버튼 찾기
         try:
-            more_btn = driver.find_element(By.LINK_TEXT, "광고 더보기")
-            more_url = more_btn.get_attribute("href")
+            more_elem = driver.find_element(
+                By.XPATH,
+                '//*[@id="mobilePowerLink_c5b0-bidq"]/section/div[2]/a'
+            )
+            more_url = more_elem.get_attribute("href")
             if more_url:
                 res_more = requests.get(more_url, headers=headers_mo)
                 soup_more = BeautifulSoup(res_more.text, "html.parser")
                 ads_more = soup_more.select("div.ad_item._ad_item")
-
                 for ad in ads_more:
                     title_el = ad.select_one("a.link_tit strong.tit")
                     title = title_el.get_text(strip=True) if title_el else "없음"
@@ -97,10 +96,10 @@ def crawl_naver_powerlink(keywords):
                         data.append([keyword, f"{title} ({advertiser})", link, "MO"])
                         collected = True
         except NoSuchElementException:
-            # “광고 더보기” 버튼이 없으면 그냥 폴백
+            # 더보기 버튼 없으면 폴백
             pass
 
-        # (2) 정적 페이지에서 한 건도 못 수집했다면 iframe 폴백
+        # (2) 더보기로 못 모았으면 기존 DOM+iframe 폴백
         if not collected:
             # 메인 DOM
             soup_main = BeautifulSoup(driver.page_source, "html.parser")
@@ -140,7 +139,7 @@ def crawl_naver_powerlink(keywords):
                         data.append([keyword, f"{title} ({advertiser})", link, "MO"])
                 driver.switch_to.default_content()
 
-        # (3) 단건도 없으면 "없음"
+        # (3) 광고 하나도 없으면 “없음”
         if not ads_collected:
             data.append([keyword, "없음", "", "MO"])
 
@@ -179,5 +178,5 @@ if st.button("크롤링 시작"):
             "엑셀 파일 다운로드",
             data=buf,
             file_name="naver_powerlink_results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument-spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
