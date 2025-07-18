@@ -8,6 +8,8 @@ import time
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
 
 # 크롬 드라이버 직접 경로 지정 함수
 def get_mobile_driver():
@@ -26,46 +28,24 @@ def get_mobile_driver():
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
-def crawl_naver_powerlink(keywords):
+def crawl_mobile_powerlink_all_ads(keywords):
     data = []
-    headers_pc = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-    }
-
     driver = get_mobile_driver()
 
     for keyword in keywords:
         query = requests.utils.quote(keyword)
-
-        # PC 버전 크롤링
-        url_pc = f"https://search.naver.com/search.naver?query={query}"
-        res_pc = requests.get(url_pc, headers=headers_pc)
-        soup_pc = BeautifulSoup(res_pc.text, "html.parser")
-
-        powerlinks_pc = soup_pc.select(".lst_type li")
-        if powerlinks_pc:
-            for ad in powerlinks_pc:
-                title_el = ad.select_one("a.site")
-                title = title_el.get_text(strip=True) if title_el else "없음"
-
-                link_el = ad.select_one("a.lnk_url")
-                link = link_el.get_text(strip=True) if link_el else ""
-
-                data.append([keyword, title, link, "PC"])
-        else:
-            data.append([keyword, "없음", "", "PC"])
-
-        # 모바일 버전 크롤링 (Selenium)
         url_mo = f"https://m.search.naver.com/search.naver?query={query}"
         driver.get(url_mo)
-        time.sleep(2)  # 페이지 로딩 대기
+        time.sleep(2)
 
-        soup_mo = BeautifulSoup(driver.page_source, "html.parser")
-        powerlinks_mo = soup_mo.select("div.ad_section._ad_list div.ad_item._ad_item")
+        ads_collected = set()
+        max_clicks = 5  # 최대 5번 슬라이드 이동 (필요에 따라 조정)
 
-        if powerlinks_mo:
-            for ad in powerlinks_mo:
+        for _ in range(max_clicks):
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            ads = soup.select("div.ad_section._ad_list div.ad_item._ad_item")
+
+            for ad in ads:
                 title_el = ad.select_one("a.link_tit strong.tit")
                 title = title_el.get_text(strip=True) if title_el else "없음"
 
@@ -75,8 +55,23 @@ def crawl_naver_powerlink(keywords):
                 link_el = ad.select_one("span.url")
                 link = link_el.get_text(strip=True) if link_el else ""
 
-                data.append([keyword, f"{title} ({advertiser})", link, "MO"])
-        else:
+                unique_id = (title, advertiser, link)
+                if unique_id not in ads_collected:
+                    ads_collected.add(unique_id)
+                    data.append([keyword, f"{title} ({advertiser})", link, "MO"])
+
+            # 다음 광고 슬라이드 버튼 클릭 시도
+            try:
+                next_button = driver.find_element(By.CSS_SELECTOR, "button.btn_next")  # CSS 셀렉터는 실제 버튼에 맞게 조정 필요
+                if next_button.is_enabled():
+                    next_button.click()
+                    time.sleep(1)  # 애니메이션 대기
+                else:
+                    break
+            except NoSuchElementException:
+                break
+
+        if not ads_collected:
             data.append([keyword, "없음", "", "MO"])
 
     driver.quit()
