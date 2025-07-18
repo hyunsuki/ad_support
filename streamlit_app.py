@@ -3,21 +3,39 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
 from io import BytesIO
+import time
 
+# Selenium 관련 import
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
+# Selenium 모바일 드라이버 생성
+def get_mobile_driver():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=375,812")  # 모바일 해상도
+    options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+# 메인 크롤링 함수
 def crawl_naver_powerlink(keywords):
     data = []
 
     headers_pc = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
     }
-    headers_mo = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-    }
+
+    driver = get_mobile_driver()
 
     for keyword in keywords:
         query = requests.utils.quote(keyword)
 
-        # PC 버전 크롤링
+        # ✅ PC 버전 크롤링
         url_pc = f"https://search.naver.com/search.naver?query={query}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
@@ -35,12 +53,14 @@ def crawl_naver_powerlink(keywords):
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        # 모바일 버전 크롤링 (업데이트된 셀렉터 + 광고주명/표시링크 추가)
-        url_mo = f"https://m.search.naver.com/search.naver?where=m&query={query}"
-        res_mo = requests.get(url_mo, headers=headers_mo)
-        soup_mo = BeautifulSoup(res_mo.text, "html.parser")
+        # ✅ 모바일 버전 크롤링 (Selenium)
+        url_mo = f"https://m.search.naver.com/search.naver?query={query}"
+        driver.get(url_mo)
+        time.sleep(2)
 
+        soup_mo = BeautifulSoup(driver.page_source, "html.parser")
         powerlinks_mo = soup_mo.select("div.ad_section._ad_list div.ad_item._ad_item")
+
         if powerlinks_mo:
             for ad in powerlinks_mo:
                 title_el = ad.select_one("a.link_tit strong.tit")
@@ -49,13 +69,14 @@ def crawl_naver_powerlink(keywords):
                 advertiser_el = ad.select_one("span.site")
                 advertiser = advertiser_el.get_text(strip=True) if advertiser_el else "없음"
 
-                link_el = ad.select_one("span.url_link")
+                link_el = ad.select_one("span.url")
                 link = link_el.get_text(strip=True) if link_el else ""
 
                 data.append([keyword, f"{title} ({advertiser})", link, "MO"])
         else:
             data.append([keyword, "없음", "", "MO"])
 
+    driver.quit()
     return data
 
 # Streamlit 앱 UI
