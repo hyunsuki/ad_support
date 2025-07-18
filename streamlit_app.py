@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
 from io import BytesIO
-import time
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -11,7 +10,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 
 def get_mobile_driver():
     options = Options()
@@ -24,7 +22,8 @@ def get_mobile_driver():
         "user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     )
-    service = Service(ChromeDriverManager().install())
+    # Streamlit Cloud에 기본 설치된 드라이버 사용
+    service = Service("/usr/bin/chromedriver")
     return webdriver.Chrome(service=service, options=options)
 
 def crawl_naver_powerlink(keywords):
@@ -46,7 +45,6 @@ def crawl_naver_powerlink(keywords):
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
         ads_pc = soup_pc.select(".lst_type li")
-
         if ads_pc:
             for ad in ads_pc:
                 title = ad.select_one("a.site").get_text(strip=True) if ad.select_one("a.site") else "없음"
@@ -58,9 +56,7 @@ def crawl_naver_powerlink(keywords):
         # ─── 모바일 크롤링 (Selenium) ────────────────────────────
         url_mo = f"https://m.ad.search.naver.com/search.naver?where=m_expd&query={q}&referenceId"
         mobile_driver.get(url_mo)
-
         try:
-            # 최대 10초 대기: 광고 li.list_item 이 하나 이상 로드될 때까지
             WebDriverWait(mobile_driver, 10).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "ul#contentsList.powerlink_list li.list_item"))
             )
@@ -69,14 +65,12 @@ def crawl_naver_powerlink(keywords):
                 raise Exception("광고 없음")
             for ad in ads_mo:
                 title = ad.find_element(By.CSS_SELECTOR, ".site").text
-                # 링크 텍스트 추출
                 try:
                     link = ad.find_element(By.CSS_SELECTOR, ".url_link").text
                 except:
                     link = ad.find_element(By.CSS_SELECTOR, ".url").text
                 data.append([keyword, title, link, "MO"])
         except Exception:
-            # 모바일 광고 하나도 못 잡으면 "없음"
             data.append([keyword, "없음", "", "MO"])
 
     mobile_driver.quit()
@@ -86,11 +80,9 @@ def crawl_naver_powerlink(keywords):
 # Streamlit UI
 # ───────────────────────────────────────────────────────────────
 st.title("네이버 파워링크 광고 크롤러")
-st.write("PC/모바일 파워링크 광고를 크롤링 후 엑셀로 다운로드합니다.")
+st.write("PC/모바일 파워링크 광고를 크롤링해 엑셀로 다운로드합니다.")
 
-keywords_input = st.text_area(
-    "검색 키워드를 입력하세요 (여러 개는 줄바꿈으로 구분)", ""
-)
+keywords_input = st.text_area("검색 키워드를 입력하세요 (줄바꿈 구분)", "")
 keywords = [k.strip() for k in keywords_input.split("\n") if k.strip()]
 
 if st.button("크롤링 시작"):
@@ -105,7 +97,6 @@ if st.button("크롤링 시작"):
         )
         st.success("크롤링 완료!")
         st.dataframe(df)
-
         buf = BytesIO()
         df.to_excel(buf, index=False)
         buf.seek(0)
