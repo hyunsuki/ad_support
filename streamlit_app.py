@@ -87,7 +87,7 @@ keywords = [k.strip() for k in keywords_input.split("\n") if k.strip()] if keywo
 if st.button("크롤링 시작"):
     if keywords:
         with st.spinner("크롤링 중..."):
-            results = crawl_naver_powerlink(keywords)
+            results = crawl_mobile_powerlink_all_ads(keywords)
 
         if results:
             st.write("크롤링된 결과:")
