@@ -1,6 +1,5 @@
 streamlit
-selenium==4.19.0
+selenium
 webdriver-manager
 beautifulsoup4
-openpyxl
 pandas
