@@ -4,7 +4,6 @@ import pandas as pd
 import streamlit as st
 from io import BytesIO
 import time
-import logging
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -13,10 +12,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+# ───────────────────────────────────────────────────────────────
+# 모바일용 Selenium 드라이버 (system chromedriver 사용)
+# ───────────────────────────────────────────────────────────────
 def get_mobile_driver():
     options = Options()
     options.add_argument("--headless")
@@ -31,6 +29,9 @@ def get_mobile_driver():
     service = Service("/usr/bin/chromedriver")
     return webdriver.Chrome(service=service, options=options)
 
+# ───────────────────────────────────────────────────────────────
+# 메인 크롤러
+# ───────────────────────────────────────────────────────────────
 def crawl_naver_powerlink(keywords):
     data = []
     headers_pc = {
@@ -44,151 +45,69 @@ def crawl_naver_powerlink(keywords):
 
     for keyword in keywords:
         q = requests.utils.quote(keyword)
-        logger.info(f"크롤링 시작: {keyword}")
 
-        ## ─── PC 크롤링 개선 (더 다양한 셀렉터 시도)
+        ## ─── PC 크롤링 (requests + BS4)
         url_pc = f"https://search.naver.com/search.naver?query={q}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
-        
-        # 여러 셀렉터 패턴 시도
-        pc_selectors = [
-            ".lst_type li",
-            ".powerlink_list li",
-            ".ad_list li",
-            "div[data-module='powerlink'] li",
-            ".powerlink .lst_type li"
-        ]
-        
-        ads_pc = []
-        for selector in pc_selectors:
-            ads_pc = soup_pc.select(selector)
-            if ads_pc:
-                logger.info(f"PC - 셀렉터 '{selector}'로 {len(ads_pc)}개 광고 발견")
-                break
-        
+        ads_pc = soup_pc.select(".lst_type li")
         if ads_pc:
-            for i, ad in enumerate(ads_pc):
-                # 여러 가능한 제목 셀렉터 시도
-                title_selectors = ["a.site", ".site", "a[class*='site']", ".tit", ".title"]
-                title = "없음"
-                for t_sel in title_selectors:
-                    title_elem = ad.select_one(t_sel)
-                    if title_elem:
-                        title = title_elem.get_text(strip=True)
-                        break
-                
-                # 여러 가능한 링크 셀렉터 시도
-                link_selectors = ["a.lnk_url", ".lnk_url", "a[class*='url']", ".url", ".link"]
-                link = ""
-                for l_sel in link_selectors:
-                    link_elem = ad.select_one(l_sel)
-                    if link_elem:
-                        link = link_elem.get_text(strip=True)
-                        break
-                
-                logger.info(f"PC 광고 {i+1}: {title} - {link}")
+            for ad in ads_pc:
+                title = ad.select_one("a.site").get_text(strip=True) if ad.select_one("a.site") else "없음"
+                link  = ad.select_one("a.lnk_url").get_text(strip=True) if ad.select_one("a.lnk_url") else ""
                 data.append([keyword, title, link, "PC"])
         else:
-            logger.warning(f"PC에서 광고를 찾을 수 없음: {keyword}")
             data.append([keyword, "없음", "", "PC"])
 
-        ## ─── 모바일 크롤링 개선
+        ## ─── 모바일 크롤링 (Selenium)
         url_mo = f"https://m.ad.search.naver.com/search.naver?where=m_expd&query={q}&referenceId"
         mobile_driver.get(url_mo)
-        
-        # 더 충분한 대기 시간
-        time.sleep(3)
 
-        # 스크롤 개선
-        last_h = 0
-        for scroll_count in range(5):  # 스크롤 횟수 증가
+        # 1) 전체 스크롤 (lazy-loading)
+        last_h = mobile_driver.execute_script("return document.body.scrollHeight")
+        for _ in range(3):
             mobile_driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-            new_h = mobile_driver.execute_script("return document.body.scrollHeight")
-            if new_h == last_h:
-                break
-            last_h = new_h
-
-        # "광고 더보기" 버튼 클릭
+            time.sleep(1)
+        # 2) “광고 더보기” 버튼 클릭 (존재 시)
         try:
-            more_buttons = mobile_driver.find_elements(By.XPATH, "//a[contains(text(), '광고 더보기') or contains(text(), '더보기')]")
-            for btn in more_buttons:
-                try:
-                    btn.click()
-                    time.sleep(2)
-                except:
-                    pass
+            btn = mobile_driver.find_element(By.LINK_TEXT, "광고 더보기")
+            btn.click()
+            time.sleep(1)
         except:
             pass
-
-        # 최종 스크롤
+        # 3) 한 번 더 스크롤
         mobile_driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
+        time.sleep(1)
 
-        # 광고 수집 - 여러 셀렉터 시도
-        mobile_selectors = [
-            "ul#contentsList.powerlink_list li.list_item",
-            "ul#contentsList li.list_item",
-            ".powerlink_list li.list_item",
-            ".powerlink_list li",
-            "li.list_item"
-        ]
-        
-        ads_mo = []
-        for selector in mobile_selectors:
-            try:
-                WebDriverWait(mobile_driver, 5).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
+        # 4) 광고 로드 대기 & 수집
+        try:
+            WebDriverWait(mobile_driver, 10).until(
+                EC.presence_of_all_elements_located(
+                    (By.CSS_SELECTOR, "ul#contentsList.powerlink_list li.list_item")
                 )
-                ads_mo = mobile_driver.find_elements(By.CSS_SELECTOR, selector)
-                if ads_mo:
-                    logger.info(f"모바일 - 셀렉터 '{selector}'로 {len(ads_mo)}개 광고 발견")
-                    break
-            except:
-                continue
-        
-        if ads_mo:
-            for i, ad in enumerate(ads_mo):
+            )
+            ads_mo = mobile_driver.find_elements(
+                By.CSS_SELECTOR, "ul#contentsList.powerlink_list li.list_item"
+            )
+            if not ads_mo:
+                raise Exception("광고 없음")
+            for ad in ads_mo:
+                title = ad.find_element(By.CSS_SELECTOR, ".site").text
                 try:
-                    # 제목 추출 - 여러 셀렉터 시도
-                    title_selectors = [".site", ".title", ".tit", "a.site", "[class*='site']"]
-                    title = "없음"
-                    for t_sel in title_selectors:
-                        try:
-                            title_elem = ad.find_element(By.CSS_SELECTOR, t_sel)
-                            title = title_elem.text.strip()
-                            if title:
-                                break
-                        except:
-                            continue
-                    
-                    # 링크 추출 - 여러 셀렉터 시도
-                    link_selectors = [".url_link", ".url", ".link", "[class*='url']"]
-                    link = ""
-                    for l_sel in link_selectors:
-                        try:
-                            link_elem = ad.find_element(By.CSS_SELECTOR, l_sel)
-                            link = link_elem.text.strip()
-                            if link:
-                                break
-                        except:
-                            continue
-                    
-                    logger.info(f"모바일 광고 {i+1}: {title} - {link}")
-                    data.append([keyword, title, link, "MO"])
-                except Exception as e:
-                    logger.error(f"모바일 광고 {i+1} 파싱 오류: {e}")
-                    continue
-        else:
-            logger.warning(f"모바일에서 광고를 찾을 수 없음: {keyword}")
+                    link = ad.find_element(By.CSS_SELECTOR, ".url_link").text
+                except:
+                    link = ad.find_element(By.CSS_SELECTOR, ".url").text
+                data.append([keyword, title, link, "MO"])
+        except:
             data.append([keyword, "없음", "", "MO"])
 
     mobile_driver.quit()
     return data
 
+# ───────────────────────────────────────────────────────────────
 # Streamlit UI
-st.title("네이버 파워링크 광고 크롤러 (개선버전)")
+# ───────────────────────────────────────────────────────────────
+st.title("네이버 파워링크 광고 크롤러")
 st.write("PC/모바일 파워링크 광고를 크롤링 후 엑셀로 다운로드합니다.")
 
 keywords_input = st.text_area("검색 키워드를 입력하세요 (줄바꿈 구분)", "")
@@ -207,11 +126,6 @@ if st.button("크롤링 시작"):
         )
         st.success("크롤링 완료!")
         st.dataframe(df)
-
-        # 광고 개수 표시
-        pc_count = len(df[df['구분'] == 'PC'])
-        mo_count = len(df[df['구분'] == 'MO'])
-        st.info(f"PC 광고: {pc_count}개, 모바일 광고: {mo_count}개")
 
         buf = BytesIO()
         df.to_excel(buf, index=False)
