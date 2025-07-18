@@ -5,29 +5,32 @@ import streamlit as st
 from io import BytesIO
 import time
 
-# Selenium 관련 import
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 
-# Selenium 모바일 드라이버 생성
+# 크롬 드라이버 직접 경로 지정 함수
 def get_mobile_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=375,812")  # 모바일 해상도
-    options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=375,812")
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    )
 
-# 메인 크롤링 함수
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
+
 def crawl_naver_powerlink(keywords):
     data = []
-
     headers_pc = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
     }
 
     driver = get_mobile_driver()
@@ -35,7 +38,7 @@ def crawl_naver_powerlink(keywords):
     for keyword in keywords:
         query = requests.utils.quote(keyword)
 
-        # ✅ PC 버전 크롤링
+        # PC 버전 크롤링
         url_pc = f"https://search.naver.com/search.naver?query={query}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
@@ -53,10 +56,10 @@ def crawl_naver_powerlink(keywords):
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        # ✅ 모바일 버전 크롤링 (Selenium)
+        # 모바일 버전 크롤링 (Selenium)
         url_mo = f"https://m.search.naver.com/search.naver?query={query}"
         driver.get(url_mo)
-        time.sleep(2)
+        time.sleep(2)  # 페이지 로딩 대기
 
         soup_mo = BeautifulSoup(driver.page_source, "html.parser")
         powerlinks_mo = soup_mo.select("div.ad_section._ad_list div.ad_item._ad_item")
@@ -79,7 +82,7 @@ def crawl_naver_powerlink(keywords):
     driver.quit()
     return data
 
-# Streamlit 앱 UI
+# Streamlit UI
 st.title("네이버 파워링크 광고 크롤러")
 st.write("네이버 검색에서 PC/모바일 파워링크 광고를 크롤링하고 결과를 확인하세요.")
 
