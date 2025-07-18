@@ -3,6 +3,29 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import streamlit as st
 from io import BytesIO
+import time
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+
+def get_mobile_driver():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=375,812")
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    )
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=options)
 
 def crawl_naver_powerlink(keywords):
     data = []
@@ -12,19 +35,14 @@ def crawl_naver_powerlink(keywords):
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         )
     }
-    headers_mo = {
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-        )
-    }
+
+    mobile_driver = get_mobile_driver()
 
     for keyword in keywords:
-        # URL 인코딩
-        query = requests.utils.quote(keyword)
+        q = requests.utils.quote(keyword)
 
         # ─── PC 크롤링 ───────────────────────────────
-        url_pc = f"https://search.naver.com/search.naver?query={query}"
+        url_pc = f"https://search.naver.com/search.naver?query={q}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
         ads_pc = soup_pc.select(".lst_type li")
@@ -37,32 +55,38 @@ def crawl_naver_powerlink(keywords):
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        # ─── 모바일 크롤링 ────────────────────────────
-        url_mo = (
-            f"https://m.ad.search.naver.com/search.naver"
-            f"?where=m_expd&query={query}&referenceId"
-        )
-        res_mo = requests.get(url_mo, headers=headers_mo)
-        soup_mo = BeautifulSoup(res_mo.text, "html.parser")
+        # ─── 모바일 크롤링 (Selenium) ────────────────────────────
+        url_mo = f"https://m.ad.search.naver.com/search.naver?where=m_expd&query={q}&referenceId"
+        mobile_driver.get(url_mo)
 
-        ads_mo = soup_mo.select("div#ct.powerlink li")
-        if ads_mo:
+        try:
+            # 최대 10초 대기: 광고 li.list_item 이 하나 이상 로드될 때까지
+            WebDriverWait(mobile_driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "ul#contentsList.powerlink_list li.list_item"))
+            )
+            ads_mo = mobile_driver.find_elements(By.CSS_SELECTOR, "ul#contentsList.powerlink_list li.list_item")
+            if not ads_mo:
+                raise Exception("광고 없음")
             for ad in ads_mo:
-                title_el = ad.select_one(".site")
-                url_el   = ad.select_one(".url_link")
-                title = title_el.get_text(strip=True) if title_el else "없음"
-                link  = url_el.get_text(strip=True) if url_el else ""
+                title = ad.find_element(By.CSS_SELECTOR, ".site").text
+                # 링크 텍스트 추출
+                try:
+                    link = ad.find_element(By.CSS_SELECTOR, ".url_link").text
+                except:
+                    link = ad.find_element(By.CSS_SELECTOR, ".url").text
                 data.append([keyword, title, link, "MO"])
-        else:
+        except Exception:
+            # 모바일 광고 하나도 못 잡으면 "없음"
             data.append([keyword, "없음", "", "MO"])
 
+    mobile_driver.quit()
     return data
 
 # ───────────────────────────────────────────────────────────────
 # Streamlit UI
 # ───────────────────────────────────────────────────────────────
 st.title("네이버 파워링크 광고 크롤러")
-st.write("PC/모바일 파워링크 광고를 한 번에 크롤링해 엑셀로 다운로드합니다.")
+st.write("PC/모바일 파워링크 광고를 크롤링 후 엑셀로 다운로드합니다.")
 
 keywords_input = st.text_area(
     "검색 키워드를 입력하세요 (여러 개는 줄바꿈으로 구분)", ""
@@ -75,7 +99,6 @@ if st.button("크롤링 시작"):
     else:
         with st.spinner("크롤링 중..."):
             results = crawl_naver_powerlink(keywords)
-
         df = pd.DataFrame(
             results,
             columns=["검색 키워드", "광고주/제목", "표시용 링크", "구분"]
