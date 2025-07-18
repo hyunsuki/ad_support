@@ -11,29 +11,33 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 
-# 모바일용 크롬 드라이버 생성 함수
+# ───────────────────────────────────────────────────────────────
+# 1) 모바일용 크롬 드라이버 생성 함수
+# ───────────────────────────────────────────────────────────────
 def get_mobile_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=375,812")
-    chrome_options.add_argument(
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=375,812")
+    options.add_argument(
         "user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     )
     service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    return driver
+    return webdriver.Chrome(service=service, options=options)
 
-# PC + 모바일 광고 크롤링 통합 함수
+# ───────────────────────────────────────────────────────────────
+# 2) PC + 모바일 광고 크롤링 통합 함수
+# ───────────────────────────────────────────────────────────────
 def crawl_naver_powerlink(keywords):
     data = []
-
     headers_pc = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        )
     }
 
     driver = get_mobile_driver()
@@ -41,7 +45,7 @@ def crawl_naver_powerlink(keywords):
     for keyword in keywords:
         query = requests.utils.quote(keyword)
 
-        ### ▶ PC 광고 수집
+        # ───▶ PC 버전 크롤링
         url_pc = f"https://search.naver.com/search.naver?query={query}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
@@ -51,89 +55,96 @@ def crawl_naver_powerlink(keywords):
             for ad in powerlinks_pc:
                 title_el = ad.select_one("a.site")
                 title = title_el.get_text(strip=True) if title_el else "없음"
-
                 link_el = ad.select_one("a.lnk_url")
                 link = link_el.get_text(strip=True) if link_el else ""
-
                 data.append([keyword, title, link, "PC"])
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        ### ▶ 모바일 광고 수집 (슬라이드 포함)
+        # ───▶ 모바일 버전 크롤링 (메인 DOM + iframe)
         url_mo = f"https://m.search.naver.com/search.naver?query={query}"
         driver.get(url_mo)
         time.sleep(2)
 
         ads_collected = set()
-        max_clicks = 5
 
-        for _ in range(max_clicks):
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-            ads = soup.select("div.ad_section._ad_list div.ad_item._ad_item")
+        # -- (1) 메인 문서에서 기본 광고 수집
+        soup_main = BeautifulSoup(driver.page_source, "html.parser")
+        ads_main = soup_main.select("div.ad_section._ad_list div.ad_item._ad_item")
+        for ad in ads_main:
+            title_el = ad.select_one("a.link_tit strong.tit")
+            title = title_el.get_text(strip=True) if title_el else "없음"
+            advertiser_el = ad.select_one("span.site")
+            advertiser = advertiser_el.get_text(strip=True) if advertiser_el else "없음"
+            link_el = ad.select_one("span.url")
+            link = link_el.get_text(strip=True) if link_el else ""
+            key = (title, advertiser, link)
+            if key not in ads_collected:
+                ads_collected.add(key)
+                data.append([keyword, f"{title} ({advertiser})", link, "MO"])
 
-            if not ads:
-                break  # 광고 없음
-
-            for ad in ads:
+        # -- (2) 광고 iframe 내부까지 수집
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        for frame in iframes:
+            src = frame.get_attribute("src") or ""
+            # src에 광고 관련 키워드가 없다면 skip
+            if "ad" not in src.lower():
+                continue
+            driver.switch_to.frame(frame)
+            time.sleep(1)
+            soup_if = BeautifulSoup(driver.page_source, "html.parser")
+            ads_if = soup_if.select("div.ad_item._ad_item")
+            for ad in ads_if:
                 title_el = ad.select_one("a.link_tit strong.tit")
                 title = title_el.get_text(strip=True) if title_el else "없음"
-
                 advertiser_el = ad.select_one("span.site")
                 advertiser = advertiser_el.get_text(strip=True) if advertiser_el else "없음"
-
                 link_el = ad.select_one("span.url")
                 link = link_el.get_text(strip=True) if link_el else ""
-
-                unique_id = (title, advertiser, link)
-                if unique_id not in ads_collected:
-                    ads_collected.add(unique_id)
+                key = (title, advertiser, link)
+                if key not in ads_collected:
+                    ads_collected.add(key)
                     data.append([keyword, f"{title} ({advertiser})", link, "MO"])
+            driver.switch_to.default_content()
 
-            # 다음 슬라이드 버튼 누르기
-            try:
-                next_button = driver.find_element(By.CSS_SELECTOR, "button.btn_next")
-                if next_button.is_enabled():
-                    next_button.click()
-                    time.sleep(1.2)
-                else:
-                    break
-            except NoSuchElementException:
-                break
-
+        # -- (3) 모바일에서도 광고 하나 못 잡으면 "없음"
         if not ads_collected:
             data.append([keyword, "없음", "", "MO"])
 
     driver.quit()
     return data
 
-# ▶ Streamlit UI
+# ───────────────────────────────────────────────────────────────
+# 3) Streamlit 앱 UI
+# ───────────────────────────────────────────────────────────────
 st.title("네이버 파워링크 광고 크롤러")
 st.write("네이버 검색에서 PC/모바일 파워링크 광고를 크롤링하고 결과를 확인하세요.")
 
-keywords_input = st.text_area("검색할 키워드를 입력하세요 (여러 키워드는 줄바꿈으로 구분)", "")
-keywords = [k.strip() for k in keywords_input.split("\n") if k.strip()] if keywords_input else []
+keywords_input = st.text_area(
+    "검색할 키워드를 입력하세요 (여러 키워드는 줄바꿈으로 구분)", ""
+)
+keywords = [k.strip() for k in keywords_input.split("\n") if k.strip()]
 
 if st.button("크롤링 시작"):
-    if keywords:
+    if not keywords:
+        st.warning("키워드를 입력해 주세요.")
+    else:
         with st.spinner("크롤링 중..."):
             results = crawl_naver_powerlink(keywords)
 
-        if results:
-            df = pd.DataFrame(results, columns=["검색 키워드", "광고 제목 (광고주)", "표시용 링크", "구분"])
-            st.write("크롤링된 결과:")
-            st.dataframe(df)
+        df = pd.DataFrame(
+            results,
+            columns=["검색 키워드", "광고 제목 (광고주)", "표시용 링크", "구분"]
+        )
+        st.success("크롤링 완료!")
+        st.dataframe(df)
 
-            output = BytesIO()
-            df.to_excel(output, index=False)
-            output.seek(0)
-
-            st.download_button(
-                label="엑셀 파일 다운로드",
-                data=output,
-                file_name="naver_powerlink_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("결과가 없습니다.")
-    else:
-        st.warning("키워드를 입력해 주세요.")
+        buf = BytesIO()
+        df.to_excel(buf, index=False)
+        buf.seek(0)
+        st.download_button(
+            "엑셀 파일 다운로드",
+            data=buf,
+            file_name="naver_powerlink_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
