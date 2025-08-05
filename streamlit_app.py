@@ -50,6 +50,7 @@ def crawl_naver_powerlink(keywords):
         url_pc_ad = f"https://ad.search.naver.com/search.naver?where=ad&query={q}"
         res_pc_ad = requests.get(url_pc_ad, headers=headers_pc_ad)
         soup_pc_ad = BeautifulSoup(res_pc_ad.text, "html.parser")
+        print(soup_pc_ad) # test code
 
         # 광고 제목: a.lnk_tit, 표시링크: a.lnk_url
         #titles_pc = soup_pc_ad.select("a.lnk_tit")
