@@ -52,7 +52,8 @@ def crawl_naver_powerlink(keywords):
         soup_pc_ad = BeautifulSoup(res_pc_ad.text, "html.parser")
 
         # 광고 제목: a.lnk_tit, 표시링크: a.lnk_url
-        titles_pc = soup_pc_ad.select("a.lnk_tit")
+        #titles_pc = soup_pc_ad.select("a.lnk_tit")
+        titles_pc = soup_pc_ad.select("a.site")
         links_pc  = soup_pc_ad.select("a.lnk_url")
 
         if titles_pc and links_pc:
