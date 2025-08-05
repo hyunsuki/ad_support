@@ -26,15 +26,15 @@ def get_mobile_driver():
         "user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     )
-    service = Service("/usr/bin/chromedriver")  # 환경에 따라 경로 수정 가능
+    service = Service("/usr/bin/chromedriver")  # 환경에 따라 경로 수정
     return webdriver.Chrome(service=service, options=options)
 
 # ─────────────────────────────────────────────
-# 크롤링 함수
+# 메인 크롤러
 # ─────────────────────────────────────────────
 def crawl_naver_powerlink(keywords):
     data = []
-    headers_pc = {
+    headers_pc_ad = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
@@ -46,32 +46,34 @@ def crawl_naver_powerlink(keywords):
     for keyword in keywords:
         q = requests.utils.quote(keyword)
 
-        ## ─── PC 크롤링
-        url_pc = f"https://search.naver.com/search.naver?query={q}"
-        res_pc = requests.get(url_pc, headers=headers_pc)
-        soup_pc = BeautifulSoup(res_pc.text, "html.parser")
+        # ─── PC 광고 (ad.search.naver.com 도메인)
+        url_pc_ad = f"https://ad.search.naver.com/search.naver?where=ad&query={q}"
+        res_pc_ad = requests.get(url_pc_ad, headers=headers_pc_ad)
+        soup_pc_ad = BeautifulSoup(res_pc_ad.text, "html.parser")
 
-        titles = soup_pc.select("a.site")
-        links = soup_pc.select("a.lnk_url")
+        # 광고 제목: a.lnk_tit, 표시링크: a.lnk_url
+        titles_pc = soup_pc_ad.select("a.lnk_tit")
+        links_pc  = soup_pc_ad.select("a.lnk_url")
 
-        if titles and links:
-            for title_tag, link_tag in zip(titles, links):
-                title = title_tag.get_text(strip=True)
-                link = link_tag.get_text(strip=True)
+        if titles_pc and links_pc:
+            for t, l in zip(titles_pc, links_pc):
+                title = t.get_text(strip=True)
+                link  = l.get_text(strip=True)
                 data.append([keyword, title, link, "PC"])
         else:
             data.append([keyword, "없음", "", "PC"])
 
-        ## ─── 모바일 크롤링 (Selenium)
+
+        # ─── 모바일 광고 (원래대로 Selenium)
         url_mo = f"https://m.ad.search.naver.com/search.naver?where=m_expd&query={q}&referenceId"
         mobile_driver.get(url_mo)
 
-        # 1) 스크롤 다운
+        # 1) 스크롤
         for _ in range(3):
             mobile_driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(1)
 
-        # 2) 광고 더보기 클릭 (존재 시)
+        # 2) “광고 더보기” 클릭
         try:
             btn = mobile_driver.find_element(By.LINK_TEXT, "광고 더보기")
             btn.click()
@@ -79,10 +81,11 @@ def crawl_naver_powerlink(keywords):
         except:
             pass
 
+        # 3) 추가 스크롤
         mobile_driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
 
-        # 3) 광고 로딩 후 수집
+        # 4) 광고 수집
         try:
             WebDriverWait(mobile_driver, 10).until(
                 EC.presence_of_all_elements_located(
@@ -131,7 +134,7 @@ if st.button("크롤링 시작"):
         st.dataframe(df)
 
         buf = BytesIO()
-        df.to_excel(buf, index=False)
+        df.to_excel(buf, index=False, engine="openpyxl")
         buf.seek(0)
         st.download_button(
             "📥 엑셀 파일 다운로드",
