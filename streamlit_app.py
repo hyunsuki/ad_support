@@ -50,11 +50,11 @@ def crawl_naver_powerlink(keywords):
         url_pc = f"https://search.naver.com/search.naver?query={q}"
         res_pc = requests.get(url_pc, headers=headers_pc)
         soup_pc = BeautifulSoup(res_pc.text, "html.parser")
-        ads_pc = soup_pc.select(".lst_type li")
+        ads_pc = soup_pc.select("a.lnk_tit")
         if ads_pc:
             for ad in ads_pc:
-                title = ad.select_one("a.site").get_text(strip=True) if ad.select_one("a.site") else "없음"
-                link  = ad.select_one("a.lnk_url").get_text(strip=True) if ad.select_one("a.lnk_url") else ""
+                title = ad.get_text(strip=True)
+                link = ad.get("href", "")
                 data.append([keyword, title, link, "PC"])
         else:
             data.append([keyword, "없음", "", "PC"])
@@ -64,10 +64,10 @@ def crawl_naver_powerlink(keywords):
         mobile_driver.get(url_mo)
 
         # 1) 전체 스크롤 (lazy-loading)
-        last_h = mobile_driver.execute_script("return document.body.scrollHeight")
         for _ in range(3):
             mobile_driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(1)
+
         # 2) “광고 더보기” 버튼 클릭 (존재 시)
         try:
             btn = mobile_driver.find_element(By.LINK_TEXT, "광고 더보기")
@@ -75,7 +75,8 @@ def crawl_naver_powerlink(keywords):
             time.sleep(1)
         except:
             pass
-        # 3) 한 번 더 스크롤
+
+        # 3) 추가 스크롤
         mobile_driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
 
@@ -91,6 +92,7 @@ def crawl_naver_powerlink(keywords):
             )
             if not ads_mo:
                 raise Exception("광고 없음")
+
             for ad in ads_mo:
                 title = ad.find_element(By.CSS_SELECTOR, ".site").text
                 try:
@@ -128,7 +130,7 @@ if st.button("크롤링 시작"):
         st.dataframe(df)
 
         buf = BytesIO()
-        df.to_excel(buf, index=False)
+        df.to_excel(buf, index=False, engine="openpyxl")
         buf.seek(0)
         st.download_button(
             "엑셀 파일 다운로드",
